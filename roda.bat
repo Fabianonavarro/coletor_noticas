@@ -1,0 +1,1 @@
+streamlit run coletor_noticias.py
