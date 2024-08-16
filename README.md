@@ -1,6 +1,7 @@
 # 📈 Coletor de Notícias
 
-Bem-vindo ao **Coletor de Notícias**! Este é um projeto que coleta e exibe notícias de diversas fontes e categorias usando a [NewsAPI](https://newsapi.org). O projeto foi desenvolvido em Python e utiliza a biblioteca [Streamlit](https://streamlit.io) para criar uma interface interativa.
+Bem-vindo ao **Coletor de Notícias**! Este é um projeto que coleta e exibe notícias de diversas fontes e categorias usando a [NewsAPI](https://newsapi.org). 
+O projeto foi desenvolvido em Python e utiliza a biblioteca [Streamlit](https://streamlit.io) para criar uma interface interativa.
 
 ## 🚀 Como Usar
 
@@ -54,16 +55,25 @@ Você pode acessar o aplicativo online no seguinte link:
 🛠️ Funcionalidades
 Obter Top Notícias: Veja as principais notícias por país, fonte, categoria ou pesquisa.
 Buscar Notícias: Encontre todas as notícias relacionadas a uma palavra-chave específica.
+
 📂 Estrutura do Projeto
+
 coletor_noticias.py: Código principal do aplicativo Streamlit.
+
 requirements.txt: Lista de
+
 .config/config.json: Arquivo de configuração para a chave da API e URLs.
+
 roda.bat: Script para facilitar a execução do aplicativo no Windows.
+
 README.md: Documentação do projeto.
+
 📜 Licença
+
 Este projeto está licenciado sob a MIT License. Veja o arquivo LICENSE para mais detalhes.
 
 📧 Contato
+
 Se você tiver alguma dúvida ou sugestão, sinta-se à vontade para entrar em contato comigo:
 
 GitHub: [Fabianonavarro](httpFabianonavarro
