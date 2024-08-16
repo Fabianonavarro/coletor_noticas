@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 # Função para carregar configurações a partir do arquivo JSON
-def carregar_configuracoes(caminho='config.json'):
+def carregar_configuracoes(caminho='.config/config.json'):
     try:
         with open(caminho, 'r') as f:
             return json.load(f)
