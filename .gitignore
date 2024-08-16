@@ -1,0 +1,3 @@
+plaintext
+   # Ignorar a pasta .config e seu conteúdo
+   .config/
