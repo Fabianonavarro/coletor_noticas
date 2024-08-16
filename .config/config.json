@@ -1,0 +1,5 @@
+{
+    "CHAVE_API": "a56f1d245fac46468e6c802f87a9452d",
+    "URL_BASE_TOP_HEADLINES": "http://newsapi.org/v2/top-headlines?",
+    "URL_BASE_EVERYTHING": "https://newsapi.org/v2/everything?"
+}
