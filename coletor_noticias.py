@@ -1,6 +1,6 @@
 import streamlit as st
-import requests
 import json
+import urllib.request
 from datetime import datetime
 
 # Função para carregar configurações a partir do arquivo JSON
@@ -23,104 +23,71 @@ def carregar_configuracoes(caminho='.config/config.json'):
 
 # Carregar as configurações
 config = carregar_configuracoes()
-CHAVE_API = config['CHAVE_API']
-URL_BASE_TOP_HEADLINES = config['URL_BASE_TOP_HEADLINES']
-URL_BASE_EVERYTHING = config['URL_BASE_EVERYTHING']
+apikey = config['API_KEY']
+URL_BASE_SEARCH = config['URL_BASE_SEARCH']
+LANG_DEFAULT = config.get('LANG_DEFAULT', 'pt')
+MAX_RESULTS = config.get('MAX_RESULTS', 20)
+CATEGORIAS = config.get('CATEGORIAS', [])
 
-# Lista de países para seleção
-PAISES = {
-    "Brasil": "br",
-    "Estados Unidos": "us",
-    "Alemanha": "de",
-    "França": "fr",
-    "Reino Unido": "gb",
-    "Japão": "jp",
-    "Canadá": "ca",
-    "Austrália": "au",
-    "Itália": "it",
-    "México": "mx",
-    # Adicione outros países conforme necessário
-}
-
-# Lista de categorias para seleção
-CATEGORIAS = [
-    "", "business", "entertainment", "general", "health", "science", "sports", "technology"
-]
-
-def construir_url_top_noticias(pais, fonte=None, categoria=None, pesquisa=None):
+def construir_url(pesquisa='', lingua=LANG_DEFAULT, pais=None, categoria=None):
     """
-    Constrói a URL para a API de top notícias.
+    Constrói a URL para a API de notícias da GNews.
 
-    :param pais: Código do país.
-    :param fonte: Opcional. Código da fonte de notícias.
-    :param categoria: Opcional. Categoria de notícias.
-    :param pesquisa: Opcional. Palavra-chave para pesquisa.
+    :param pesquisa: Palavra-chave para pesquisa (opcional).
+    :param lingua: Idioma das notícias (opcional).
+    :param pais: Código do país (opcional).
+    :param categoria: Categoria de notícias (opcional).
     :return: URL completa para a requisição.
     """
-    if fonte:
-        return f"{URL_BASE_TOP_HEADLINES}sources={fonte}&apiKey={CHAVE_API}"
-    elif categoria:
-        return f"{URL_BASE_TOP_HEADLINES}country={pais}&category={categoria}&apiKey={CHAVE_API}"
-    elif pesquisa:
-        return f"{URL_BASE_TOP_HEADLINES}country={pais}&q={pesquisa}&apiKey={CHAVE_API}"
-    else:
-        return f"{URL_BASE_TOP_HEADLINES}country={pais}&apiKey={CHAVE_API}"
+    params = {
+        'q': pesquisa if pesquisa else '',
+        'lang': lingua,
+        'country': pais if pais else '',  # Certifique-se de usar uma string vazia se não houver país
+        'max': MAX_RESULTS,
+        'apikey': apikey
+    }
 
-@st.cache_data
-def top_noticias(pais, fonte=None, categoria=None, pesquisa=None):
-    """
-    Retorna as top notícias do site newsapi.org.
-
-    :param pais: Requerido - Código do país (ex: br).
-    :param fonte: Opcional - Código da fonte de notícias (ex: globo).
-    :param categoria: Opcional - Categoria de notícias (ex: 'technology').
-    :param pesquisa: Opcional - Palavra-chave para pesquisa (ex: bolsonaro).
-    :return: Lista de top notícias.
-    """
-    url = construir_url_top_noticias(pais, fonte, categoria, pesquisa)
+    if categoria:
+        params['topic'] = categoria.lower()
     
-    try:
-        resposta = requests.get(url)
-        resposta.raise_for_status()
-        dados = resposta.json()
-        artigos = dados.get('articles', [])
+    # Remover parâmetros com valores vazios
+    params = {k: v for k, v in params.items() if v not in [None, '']}
 
-        top_noticias = [(
-            artigo['title'],
-            artigo['url'],
-            artigo['publishedAt']
-        ) for artigo in artigos]
+    query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
+    url = f"{URL_BASE_SEARCH}?{query_string}"
+    
+    return url
 
-        return top_noticias
-    except requests.RequestException as e:
-        st.error(f"Erro ao obter notícias: {e}")
-        return []
-
-@st.cache_data
-def todas_noticias(pesquisa, lingua=None):
+def buscar_noticias(pesquisa='', lingua=LANG_DEFAULT, pais=None, categoria=None):
     """
-    Retorna todas as notícias do site newsapi.org.
+    Retorna todas as notícias do site GNews.
 
-    :param pesquisa: Requerido - Palavra-chave para pesquisa (ex: 'trump').
-    :param lingua: Opcional - Idioma das notícias (ex: 'pt').
+    :param pesquisa: Palavra-chave para pesquisa (opcional).
+    :param lingua: Idioma das notícias (opcional).
+    :param pais: Código do país (opcional).
+    :param categoria: Categoria das notícias (opcional).
     :return: Lista de todas as notícias.
     """
-    url = f"{URL_BASE_EVERYTHING}q={pesquisa}&language={lingua or 'en'}&apiKey={CHAVE_API}"
-    
+    url = construir_url(pesquisa, lingua=lingua, pais=pais, categoria=categoria)
+    if not url:
+        return []
+
     try:
-        resposta = requests.get(url)
-        resposta.raise_for_status()
-        dados = resposta.json()
-        artigos = dados.get('articles', [])
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            artigos = data.get("articles", [])
 
-        todas_noticias = [(
-            artigo['title'],
-            artigo['url'],
-            artigo['publishedAt']
-        ) for artigo in artigos]
-
-        return todas_noticias
-    except requests.RequestException as e:
+            todas_noticias = [
+                (
+                    artigo.get('title', 'Sem título'),
+                    artigo.get('description', 'Sem descrição'),
+                    artigo.get('url', 'Sem URL'),
+                    artigo.get('publishedAt', 'Sem data')
+                )
+                for artigo in artigos
+            ]
+            return todas_noticias
+    except Exception as e:
         st.error(f"Erro ao obter notícias: {e}")
         return []
 
@@ -168,46 +135,40 @@ def main():
             }
         </style>
         <div class="title">Coletor de Notícias</div>
-        <div class="newsapi">com NewsAPI</div>
+        <div class="newsapi">com GNews API</div>
+        <p style="text-align: center; color: #0033A0; font-size: 18px;">
+            Você deve inserir uma palavra-chave para pesquisa ou selecionar uma categoria para obter notícias.
+        </p>
         """, unsafe_allow_html=True)
 
     st.sidebar.markdown('<p class="sidebar-header">Filtros para Pesquisa</p>', unsafe_allow_html=True)
 
-    pais = st.sidebar.selectbox(
-        "Escolha o país da notícia:",
-        options=list(PAISES.keys()),
-        format_func=lambda x: f"{x} ({PAISES[x]})"
-    )
-    codigo_pais = PAISES[pais]
-    
     pesquisa = st.sidebar.text_input("Insira o que pesquisar (palavra ou frase):", "")
-    fonte = st.sidebar.text_input("Insira a fonte (opcional, ex: globo):", "")
+    lingua = st.sidebar.selectbox("Escolha o idioma (opcional):", ["pt", "en"], index=["pt", "en"].index(LANG_DEFAULT))
+    pais = st.sidebar.selectbox(
+        "Escolha o país (opcional):",
+        options=[None, "us", "br", "de", "fr", "gb", "jp", "ca", "au", "it", "mx"],
+        format_func=lambda x: f"{x.upper()}" if x else "Todos os países"
+    )
     categoria = st.sidebar.selectbox(
         "Escolha a categoria (opcional):",
-        CATEGORIAS
+        options=[None] + CATEGORIAS,
+        format_func=lambda x: x if x else "Todas as categorias"
     )
 
-    if st.sidebar.button("Buscar Top Notícias"):
-        st.subheader(f"Top Notícias do País - {pais.upper()}")
-        noticias = top_noticias(codigo_pais, fonte=fonte, categoria=categoria, pesquisa=pesquisa)
-
-        if noticias:
-            for i, (titulo, url, publicado_em) in enumerate(noticias, 1):
-                publicado_em = datetime.fromisoformat(publicado_em).strftime('%d/%m/%Y %H:%M:%S')
-                st.write(f"{i}. {titulo} \n[Leia mais]({url}) \nPublicado em: {publicado_em}")
+    if st.sidebar.button("Buscar Notícias"):
+        if pesquisa.strip() == '' and categoria is None:
+            st.error("Você deve inserir uma palavra-chave para pesquisa ou selecionar uma categoria.")
         else:
-            st.write("Não encontrei notícias com as opções informadas!")
+            st.subheader(f"Notícias sobre - {'todas' if pesquisa.strip() == '' else pesquisa.upper()} | Categoria: {categoria if categoria else 'Todas'}")
+            noticias = buscar_noticias(pesquisa, lingua=lingua, pais=pais, categoria=categoria)
 
-    if st.sidebar.button("Buscar Todas as Notícias"):
-        st.subheader(f"Todas as Notícias sobre - {pesquisa.upper()}")
-        todas_noticias_resultado = todas_noticias(pesquisa, lingua='pt')
-
-        if todas_noticias_resultado:
-            for i, (titulo, url, publicado_em) in enumerate(todas_noticias_resultado, 1):
-                publicado_em = datetime.fromisoformat(publicado_em).strftime('%d/%m/%Y %H:%M:%S')
-                st.write(f"{i}. {titulo} \n[Leia mais]({url}) \nPublicado em: {publicado_em}")
-        else:
-            st.write("Não encontrei notícias com as opções informadas!")
+            if noticias:
+                for i, (titulo, descricao, url, publicado_em) in enumerate(noticias, 1):
+                    publicado_em = datetime.fromisoformat(publicado_em).strftime('%d/%m/%Y %H:%M:%S') if publicado_em != 'Sem data' else 'Sem data'
+                    st.write(f"{i}. {titulo} \nDescrição: {descricao} \n[Leia mais]({url}) \nPublicado em: {publicado_em}")
+            else:
+                st.write("Não encontrei notícias com as opções informadas!")
 
     st.markdown("""
         <div class="footer">
