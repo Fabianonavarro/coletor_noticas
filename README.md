@@ -1,6 +1,6 @@
 # 📈 Coletor de Notícias
 
-Bem-vindo ao **Coletor de Notícias**! Este é um projeto que coleta e exibe notícias de diversas fontes e categorias usando a [NewsAPI](https://newsapi.org). 
+Bem-vindo ao **Coletor de Notícias**! Este é um projeto que coleta e exibe notícias de diversas fontes e categorias usando a [GnewsAPI](https://gnews.io/). 
 O projeto foi desenvolvido em Python e utiliza a biblioteca [Streamlit](https://streamlit.io) para criar uma interface interativa.
 
 ## 🚀 Como Usar
@@ -28,20 +28,30 @@ Crie um arquivo de configuração chamado .config/config.json com o seguinte con
 json
 
 Copiar código
+
 {
-  "CHAVE_API": "sua_chave_aqui",
-  "URL_BASE_TOP_HEADLINES": "http://newsapi.org/v2/top-headlines?",
-  "URL_BASE_EVERYTHING": "https://newsapi.org/v2/everything?"
+  "API_KEY": "sua_chave_aqui",
+  "URL_BASE_SEARCH": "https://gnews.io/api/v4/search",
+  "LANG_DEFAULT": "pt",
+  "MAX_RESULTS": 20,
+  "CATEGORIAS": [
+    "Sport",
+    "Politics",
+    "Economy",
+    "Technology",
+    "Health",
+    "Science",
+    "Entertainment"
+  ]
 }
+
+
 Execute o Aplicativo:
 
 Você pode executar o aplicativo de duas maneiras:
 
 Usando o comando do Streamlit:
 
-bater
-
-Copiar código
 streamlit run coletor_noticias.py
 Usando o arquivo roda.bat (para Windows):
 
