@@ -1,5 +1,15 @@
 {
-    "CHAVE_API": "a56f1d245fac46468e6c802f87a9452d",
-    "URL_BASE_TOP_HEADLINES": "http://newsapi.org/v2/top-headlines?",
-    "URL_BASE_EVERYTHING": "https://newsapi.org/v2/everything?"
+  "API_KEY": "fa57937432806d8fdd331a4db76ddbc8",
+  "URL_BASE_SEARCH": "https://gnews.io/api/v4/search",
+  "LANG_DEFAULT": "pt",
+  "MAX_RESULTS": 20,
+  "CATEGORIAS": [
+    "Sport",
+    "Politics",
+    "Economy",
+    "Technology",
+    "Health",
+    "Science",
+    "Entertainment"
+  ]
 }
