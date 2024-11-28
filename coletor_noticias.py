@@ -5,6 +5,12 @@ from datetime import datetime
 
 # Função para carregar configurações do arquivo JSON
 def carregar_configuracoes(caminho='.config/config.json'):
+    """
+    Carrega as configurações do arquivo JSON.
+
+    :param caminho: Caminho para o arquivo de configuração.
+    :return: Dicionário com as configurações.
+    """
     try:
         with open(caminho, 'r') as f:
             return json.load(f)
@@ -23,23 +29,45 @@ LANG_DEFAULT = config.get('LANG_DEFAULT', 'pt')
 MAX_RESULTS = config.get('MAX_RESULTS', 20)
 CATEGORIAS = config.get('CATEGORIAS', [])
 
+# Função para construir a URL para a API de notícias
 def construir_url(pesquisa='', lingua=LANG_DEFAULT, pais=None, categoria=None):
+    """
+    Constrói a URL para a API de notícias da GNews.
+
+    :param pesquisa: Palavra-chave para pesquisa (opcional).
+    :param lingua: Idioma das notícias (opcional).
+    :param pais: Código do país (opcional).
+    :param categoria: Categoria de notícias (opcional).
+    :return: URL completa para a requisição.
+    """
     params = {
-        'q': pesquisa if pesquisa else '',
-        'lang': lingua,
-        'country': pais if pais else '',
-        'max': MAX_RESULTS,
-        'apikey': apikey
+        'q': pesquisa if pesquisa else '',  # Palavra-chave para pesquisa
+        'lang': lingua,  # Idioma das notícias
+        'country': pais if pais else '',  # País
+        'max': MAX_RESULTS,  # Máximo de resultados
+        'apikey': apikey  # Chave da API
     }
 
     if categoria:
-        params['topic'] = categoria.lower()
+        params['topic'] = categoria.lower()  # Adiciona a categoria, se fornecida
 
+    # Remover parâmetros com valores vazios
     params = {k: v for k, v in params.items() if v not in [None, '']}
+
     query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
     return f"{URL_BASE_SEARCH}?{query_string}"
 
+# Função para buscar notícias
 def buscar_noticias(pesquisa='', lingua=LANG_DEFAULT, pais=None, categoria=None):
+    """
+    Retorna todas as notícias do site GNews.
+
+    :param pesquisa: Palavra-chave para pesquisa (opcional).
+    :param lingua: Idioma das notícias (opcional).
+    :param pais: Código do país (opcional).
+    :param categoria: Categoria das notícias (opcional).
+    :return: Lista de todas as notícias.
+    """
     url = construir_url(pesquisa, lingua=lingua, pais=pais, categoria=categoria)
     if not url:
         return []
@@ -47,8 +75,6 @@ def buscar_noticias(pesquisa='', lingua=LANG_DEFAULT, pais=None, categoria=None)
     try:
         with urllib.request.urlopen(url) as response:
             data = json.loads(response.read().decode("utf-8"))
-            # Adiciona esta linha para verificar o que está sendo retornado pela API
-            st.write(data)  # Aqui você vê o conteúdo completo da resposta da API
             artigos = data.get("articles", [])
             return [
                 (
@@ -62,6 +88,13 @@ def buscar_noticias(pesquisa='', lingua=LANG_DEFAULT, pais=None, categoria=None)
     except Exception as e:
         st.error(f"Erro ao obter notícias: {e}")
         return []
+
+# Função para formatar a data
+def formatar_data(publicado_em):
+    try:
+        return datetime.fromisoformat(publicado_em).strftime('%d/%m/%Y %H:%M:%S')
+    except ValueError:
+        return publicado_em  # Se não for uma data válida, retorna como está
 
 # Interface Streamlit
 st.markdown("""
@@ -104,8 +137,8 @@ if st.sidebar.button("Buscar Notícias"):
 
         if noticias:
             for i, (titulo, descricao, url, publicado_em) in enumerate(noticias, 1):
-                publicado_em = datetime.fromisoformat(publicado_em).strftime('%d/%m/%Y %H:%M:%S') if publicado_em != 'Sem data' else 'Sem data'
-                st.write(f"{i}. {titulo} \nDescrição: {descricao} \n[Leia mais]({url}) \nPublicado em: {publicado_em}")
+                publicado_em = formatar_data(publicado_em)
+                st.write(f"{i}. **{titulo}**\n{descricao}\n[Leia mais]({url})\nPublicado em: {publicado_em}")
         else:
             st.write("Nenhuma notícia encontrada!")
 
