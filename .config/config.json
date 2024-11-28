@@ -1,6 +1,6 @@
 {
-  "API_KEY": "fa57937432806d8fdd331a4db76ddbc8", 
-  "URL_BASE_SEARCH": "url = f"https://gnews.io/api/v4/search?q=example&lang=en&country=us&max=10&apikey={apikey}"", 
+  "API_KEY": "fa57937432806d8fdd331a4db76ddbc8",
+  "URL_BASE_SEARCH": "https://gnews.io/api/v4/search",
   "LANG_DEFAULT": "pt",
   "MAX_RESULTS": 20,
   "CATEGORIAS": [
