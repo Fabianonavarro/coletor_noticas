@@ -39,28 +39,8 @@ def construir_url(pesquisa='', lingua=LANG_DEFAULT, pais=None, categoria=None):
     query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
     return f"{URL_BASE_SEARCH}?{query_string}"
 
-def buscar_noticias(pesquisa='', lingua=LANG_DEFAULT, pais=None, categoria=None):
-    url = construir_url(pesquisa, lingua=lingua, pais=pais, categoria=categoria)
-    if not url:
-        return []
-
-    try:
-        with urllib.request.urlopen(url) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            artigos = data.get("articles", [])
-            return [
-                (
-                    artigo.get('title', 'Sem título'),
-                    artigo.get('description', 'Sem descrição'),
-                    artigo.get('url', 'Sem URL'),
-                    artigo.get('publishedAt', 'Sem data')
-                )
-                for artigo in artigos
-            ]
-    except Exception as e:
-        st.error(f"Erro ao obter notícias: {e}")
-        return []
-
+gadoras do Corinthinas e Internacional falam da final do Brasileirão Descrição: O segundo jogo da final acontece em São Paulo, na Neo Química Arena Leia mais Publicado em: 24/09/2022 03:00:00
+Vítor Pereira recebido por dezenas de adeptos do Corinthians em euforia Descrição: O treinador
 # Interface Streamlit
 st.markdown("""
     <style>
