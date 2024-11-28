@@ -93,6 +93,7 @@ categoria = st.sidebar.selectbox(
 
 # Botão de busca
 if st.sidebar.button("Buscar Notícias"):
+    # Sempre forçar a execução do código de busca ao clicar no botão
     if not pesquisa.strip() and not categoria:
         st.error("Por favor, insira uma palavra-chave ou selecione uma categoria.")
     else:
