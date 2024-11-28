@@ -108,7 +108,7 @@ st.markdown("""
     </style>
     <div class="title">Coletor de Notícias</div>
     <div class="newsapi">com GNews API</div>
-    <p style="text-align: center; color: #0033A0; font-size: 18px;">Digite uma palavra-chave ou escolha uma categoria para buscar notícias.</p>
+    <p style="text-align: center; color: #0033A0; font-size: 18px;">Digite sua busca  ou escolha uma categoria para buscar notícias.</p>
 """, unsafe_allow_html=True)
 
 # Filtros de pesquisa
