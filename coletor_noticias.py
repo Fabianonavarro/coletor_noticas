@@ -15,7 +15,6 @@ st.set_page_config(page_title="Central de Informações", page_icon="🧭", layo
 
 GNEWS_URL = "https://gnews.io/api/v4"
 VIACEP_URL = "https://viacep.com.br/ws/{}/json/"
-CONFIG_PATH = ".config/config.json"
 USER_AGENT = "Mozilla/5.0 (compatible; CentralInformacoes/1.0)"
 
 IDIOMAS = {"Português": "pt", "English": "en"}
@@ -33,7 +32,6 @@ CATEGORIAS = {
 FONTES = {"GNews (API, mundo)": "GNews", "RSS (G1, Folha, Agência Brasil)": "RSS"}
 
 # Feeds RSS por categoria: (nome do portal, URL).
-# Se algum feed mudar de endereço, é só ajustar aqui: feeds que falham são ignorados.
 RSS_FEEDS = {
     "general": [
         ("G1", "https://g1.globo.com/rss/g1/"),
@@ -73,20 +71,20 @@ RSS_FEEDS = {
 }
 
 
-# ---------- Configuração ----------
+# ---------- Configuração via st.secrets ----------
 def carregar_config():
-    """Prioriza st.secrets; usa .config/config.json como alternativa local."""
-    config = {}
-    try:
-        with open(CONFIG_PATH, encoding="utf-8") as f:
-            config = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
+    """Lê as configurações exclusivamente dos Secrets do Streamlit."""
     try:
         api_key = st.secrets["API_KEY"]
     except Exception:
-        api_key = config.get("API_KEY")
-    return api_key, int(config.get("MAX_RESULTS", 20))
+        api_key = None
+
+    try:
+        max_results = int(st.secrets.get("MAX_RESULTS", 20))
+    except Exception:
+        max_results = 20
+
+    return api_key, max_results
 
 
 API_KEY, MAX_RESULTS = carregar_config()
@@ -118,7 +116,6 @@ def formatar_data(publicado_em):
 # ---------- Fonte 1: GNews ----------
 @st.cache_data(ttl=600, show_spinner="Buscando na GNews...")
 def buscar_noticias(pesquisa, lingua, pais, categoria, maximo):
-    """Busca na GNews. Erros viram RuntimeError (e não entram no cache)."""
     endpoint = "top-headlines" if categoria else "search"
     params = {"lang": lingua, "max": maximo, "apikey": API_KEY}
     if pesquisa:
@@ -176,7 +173,6 @@ def _limpar_html(txt):
 
 
 def _baixar_feed(nome, url):
-    """Baixa e normaliza um feed. Levanta exceção se falhar."""
     resp = requests.get(url, timeout=8, headers={"User-Agent": USER_AGENT})
     resp.raise_for_status()
     feed = feedparser.parse(resp.content)
@@ -198,12 +194,11 @@ def _baixar_feed(nome, url):
 
 @st.cache_data(ttl=300, show_spinner="Lendo feeds RSS...")
 def buscar_rss(pesquisa, categoria, maximo):
-    """Lê os feeds em paralelo e filtra pela palavra-chave. Retorna (artigos, nº de falhas)."""
     if categoria:
         feeds = RSS_FEEDS.get(categoria, [])
     else:
         feeds = [f for lista in RSS_FEEDS.values() for f in lista]
-    feeds = list(dict.fromkeys(feeds))  # remove repetidos
+    feeds = list(dict.fromkeys(feeds))
 
     artigos, falhas = [], 0
     with ThreadPoolExecutor(max_workers=8) as ex:
@@ -226,7 +221,6 @@ def buscar_rss(pesquisa, categoria, maximo):
 
 # ---------- Combinação das fontes ----------
 def mesclar(artigos):
-    """Ordena por data (mais recente primeiro) e remove duplicados por URL ou título."""
     vistos, saida = set(), []
     for a in sorted(artigos, key=lambda x: _dt(x.get("publishedAt")), reverse=True):
         chaves = {c for c in (a.get("url"), _norm(a.get("title"))) if c}
@@ -238,12 +232,11 @@ def mesclar(artigos):
 
 
 def coletar(pesquisa, lingua, pais, categoria, fontes, maximo):
-    """Busca nas fontes escolhidas. Retorna (artigos mesclados, lista de avisos)."""
     resultados, avisos = [], []
 
     if "GNews" in fontes:
         if not API_KEY:
-            avisos.append("GNews: chave da API não configurada.")
+            avisos.append("GNews: chave da API não configurada nos Secrets.")
         else:
             try:
                 resultados += [_de_gnews(a) for a in buscar_noticias(pesquisa, lingua, pais, categoria, maximo)]
@@ -262,7 +255,6 @@ def coletar(pesquisa, lingua, pais, categoria, fontes, maximo):
 # ---------- Serviço de CEP ----------
 @st.cache_data(ttl=86400, show_spinner="Consultando CEP...")
 def consultar_cep(cep):
-    """Retorna dict do endereço, ou None se o CEP não existir."""
     try:
         resp = requests.get(VIACEP_URL.format(cep), timeout=10)
         resp.raise_for_status()
@@ -270,6 +262,18 @@ def consultar_cep(cep):
     except (requests.exceptions.RequestException, ValueError):
         raise RuntimeError("Não foi possível consultar o ViaCEP. Tente novamente.") from None
     return None if dados.get("erro") else dados
+
+
+# ---------- Serviço de Cotações ----------
+@st.cache_data(ttl=1800, show_spinner="Buscando cotações...")
+def obter_cotacoes():
+    try:
+        url = "https://economia.awesomeapi.com.br/json/last/USD-BRL,EUR-BRL,GBP-BRL,ARS-BRL,BTC-BRL"
+        resp = requests.get(url, timeout=8)
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.exceptions.RequestException, ValueError):
+        return None
 
 
 # ---------- Exibição ----------
@@ -328,7 +332,7 @@ def aba_cep():
         enviar = st.form_submit_button("📍 Consultar CEP")
 
     if enviar:
-        cep = re.sub(r"\D", "", entrada)  # aceita 01001-000, 01001 000 etc.
+        cep = re.sub(r"\D", "", entrada)
         st.session_state.pop("cep_resultado", None)
         if len(cep) != 8:
             st.error("CEP inválido: informe exatamente 8 dígitos.")
@@ -363,14 +367,78 @@ def aba_cep():
     endereco = ", ".join(filter(None, [dados.get("logradouro"), dados.get("bairro"), cidade, uf, "Brasil"]))
     st.link_button("🗺️ Ver no Google Maps", f"https://www.google.com/maps/search/?api=1&query={quote_plus(endereco)}")
 
-    # Integração: notícias da cidade do CEP, nas duas fontes
     st.divider()
     if st.toggle(f"📰 Mostrar notícias de {cidade}"):
         artigos, avisos = coletar(cidade, "pt", "br", None, ["GNews", "RSS"], 5)
         mostrar_artigos(artigos, avisos)
 
 
-# ---------- Página ----------
+def aba_conversor():
+    st.subheader("💱 Conversor de Moedas e Cotações em Tempo Real")
+    
+    dados = obter_cotacoes()
+    if not dados:
+        st.error("Não foi possível carregar as cotações no momento. Tente novamente mais tarde.")
+        return
+
+    moedas_info = {
+        "Dólar Americano (USD)": {"dados": dados.get("USDBRL")},
+        "Euro (EUR)": {"dados": dados.get("EURBRL")},
+        "Libra Esterlina (GBP)": {"dados": dados.get("GBPBRL")},
+        "Peso Argentino (ARS)": {"dados": dados.get("ARSBRL")},
+        "Bitcoin (BTC)": {"dados": dados.get("BTCBRL")},
+    }
+
+    cols = st.columns(len(moedas_info))
+    for i, (nome, info) in enumerate(moedas_info.items()):
+        item = info["dados"]
+        if item:
+            val_atual = float(item["bid"])
+            variacao = float(item["pctChange"])
+            cols[i].metric(
+                label=item["name"].split("/")[0],
+                value=f"R$ {val_atual:.2f}" if val_atual > 1 else f"R$ {val_atual:.4f}",
+                delta=f"{variacao:+.2f}%"
+            )
+
+    st.divider()
+
+    st.write("### Calculadora de Conversão")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        valor_inserido = st.number_input("Valor a converter", min_value=0.0, value=100.0, step=10.0)
+        
+    with col2:
+        opcao_destino = st.selectbox(
+            "Converter de / para:",
+            [
+                "Dólar (USD) ➡️ Real (BRL)",
+                "Real (BRL) ➡️ Dólar (USD)",
+                "Euro (EUR) ➡️ Real (BRL)",
+                "Real (BRL) ➡️ Euro (EUR)",
+            ]
+        )
+
+    if dados.get("USDBRL") and dados.get("EURBRL"):
+        dolar_val = float(dados["USDBRL"]["bid"])
+        euro_val = float(dados["EURBRL"]["bid"])
+        
+        if "Dólar (USD) ➡️ Real (BRL)" in opcao_destino:
+            resultado = valor_inserido * dolar_val
+            st.success(f"US$ {valor_inserido:,.2f} equivalem a **R$ {resultado:,.2f}**")
+        elif "Real (BRL) ➡️ Dólar (USD)" in opcao_destino:
+            resultado = valor_inserido / dolar_val
+            st.success(f"R$ {valor_inserido:,.2f} equivalem a **US$ {resultado:,.2f}**")
+        elif "Euro (EUR) ➡️ Real (BRL)" in opcao_destino:
+            resultado = valor_inserido * euro_val
+            st.success(f"€ {valor_inserido:,.2f} equivalem a **R$ {resultado:,.2f}**")
+        elif "Real (BRL) ➡️ Euro (EUR)" in opcao_destino:
+            resultado = valor_inserido / euro_val
+            st.success(f"R$ {valor_inserido:,.2f} equivalem a **€ {resultado:,.2f}**")
+
+
+# ---------- Página Principal ----------
 st.markdown(
     """
     <style>
@@ -381,21 +449,23 @@ st.markdown(
     </style>
     <div class="hero">
         <h1>🧭 Central de Informações</h1>
-        <p>Notícias de duas fontes (GNews + RSS) e consulta de CEP em um só lugar.</p>
+        <p>Notícias (GNews + RSS), Consulta de CEP e Conversor de Moedas em um só lugar.</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 if not API_KEY:
-    st.warning("Chave da GNews não encontrada: só o RSS vai funcionar na aba de notícias. "
-               "Defina `API_KEY` em st.secrets ou em .config/config.json.")
+    st.warning("Chave da GNews não encontrada nos Secrets: só o RSS vai funcionar na aba de notícias.")
 
-tab_noticias, tab_cep = st.tabs(["📰 Notícias", "📍 Consulta de CEP"])
+tab_noticias, tab_cep, tab_conversor = st.tabs(["📰 Notícias", "📍 Consulta de CEP", "💱 Conversor de Moedas"])
+
 with tab_noticias:
     aba_noticias()
 with tab_cep:
     aba_cep()
+with tab_conversor:
+    aba_conversor()
 
 st.divider()
 st.caption("Desenvolvido por **Fabiano Navarro** · [LinkedIn](https://www.linkedin.com/in/fabiano-de-navarro)")
