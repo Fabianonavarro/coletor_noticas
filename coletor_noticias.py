@@ -15,6 +15,7 @@ st.set_page_config(page_title="Central de Informações", page_icon="🧭", layo
 
 GNEWS_URL = "https://gnews.io/api/v4"
 VIACEP_URL = "https://viacep.com.br/ws/{}/json/"
+AWESOME_URL = "https://economia.awesomeapi.com.br/json/last"
 USER_AGENT = "Mozilla/5.0 (compatible; CentralInformacoes/1.0)"
 
 IDIOMAS = {"Português": "pt", "English": "en"}
@@ -30,6 +31,12 @@ CATEGORIAS = {
     "Esportes": "sports", "Ciência": "science", "Saúde": "health",
 }
 FONTES = {"GNews (API, mundo)": "GNews", "RSS (G1, Folha, Agência Brasil)": "RSS"}
+
+# Moedas do conversor (sempre cotadas contra o real)
+MOEDAS = {
+    "USD": "Dólar americano", "EUR": "Euro", "GBP": "Libra esterlina",
+    "ARS": "Peso argentino", "BTC": "Bitcoin",
+}
 
 # Feeds RSS por categoria: (nome do portal, URL).
 RSS_FEEDS = {
@@ -79,15 +86,21 @@ def carregar_config():
     except Exception:
         api_key = None
 
+    # Opcional: chave gratuita da AwesomeAPI (evita limites e cache nas cotações)
+    try:
+        awesome_key = st.secrets["AWESOMEAPI_KEY"]
+    except Exception:
+        awesome_key = None
+
     try:
         max_results = int(st.secrets.get("MAX_RESULTS", 20))
     except Exception:
         max_results = 20
 
-    return api_key, max_results
+    return api_key, awesome_key, max_results
 
 
-API_KEY, MAX_RESULTS = carregar_config()
+API_KEY, AWESOME_KEY, MAX_RESULTS = carregar_config()
 
 
 # ---------- Utilidades ----------
@@ -111,6 +124,16 @@ def formatar_data(publicado_em):
         return dt.astimezone(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M")
     except (ValueError, AttributeError):
         return publicado_em or "Sem data"
+
+
+def fmt_num(valor, casas=2):
+    """Formata no padrão brasileiro: 1.234,56"""
+    s = f"{valor:,.{casas}f}"
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def fmt_brl(valor):
+    return "R$ " + fmt_num(valor, 2 if valor >= 1 else 4)
 
 
 # ---------- Fonte 1: GNews ----------
@@ -265,16 +288,34 @@ def consultar_cep(cep):
 
 
 # ---------- Serviço de Cotações ----------
-@st.cache_data(ttl=1800, show_spinner="Buscando cotações...")
+@st.cache_data(ttl=300, show_spinner="Buscando cotações...")
 def obter_cotacoes():
+    """
+    Busca as cotações na AwesomeAPI. Falhas levantam RuntimeError, que o
+    st.cache_data NÃO guarda (antes, um erro virava None e ficava em cache por 30 min).
+    """
+    pares = ",".join(f"{m}-BRL" for m in MOEDAS)
+    headers = {"User-Agent": USER_AGENT}
+    if AWESOME_KEY:
+        headers["x-api-key"] = AWESOME_KEY
+
     try:
-        url = "https://economia.awesomeapi.com.br/json/last/USD-BRL,EUR-BRL,GBP-BRL,ARS-BRL,BTC-BRL"
-        headers = {"User-Agent": USER_AGENT}
-        resp = requests.get(url, headers=headers, timeout=8)
+        resp = requests.get(f"{AWESOME_URL}/{pares}", headers=headers, timeout=10)
         resp.raise_for_status()
-        return resp.json()
+        dados = resp.json()
+    except requests.exceptions.HTTPError as e:
+        codigo = e.response.status_code if e.response is not None else "?"
+        dicas = {
+            404: "Alguma moeda da lista não foi encontrada.",
+            429: "Limite de requisições atingido. Cadastre uma chave gratuita (AWESOMEAPI_KEY).",
+        }
+        raise RuntimeError(f"AwesomeAPI retornou erro HTTP {codigo}. {dicas.get(codigo, '')}".strip()) from None
     except (requests.exceptions.RequestException, ValueError):
-        return None
+        raise RuntimeError("Não foi possível conectar à AwesomeAPI.") from None
+
+    if not isinstance(dados, dict) or not any(f"{m}BRL" in dados for m in MOEDAS):
+        raise RuntimeError("Resposta inesperada da AwesomeAPI.")
+    return dados
 
 
 # ---------- Exibição ----------
@@ -375,68 +416,48 @@ def aba_cep():
 
 
 def aba_conversor():
-    st.subheader("💱 Conversor de Moedas e Cotações em Tempo Real")
-    
-    dados = obter_cotacoes()
-    if not dados:
-        st.error("Não foi possível carregar as cotações no momento. Tente novamente mais tarde.")
+    st.subheader("💱 Cotações e Conversor de Moedas")
+
+    try:
+        dados = obter_cotacoes()
+    except RuntimeError as e:
+        st.error(f"Não foi possível carregar as cotações. {e}")
         return
 
-    moedas_info = {
-        "Dólar Americano (USD)": {"dados": dados.get("USDBRL")},
-        "Euro (EUR)": {"dados": dados.get("EURBRL")},
-        "Libra Esterlina (GBP)": {"dados": dados.get("GBPBRL")},
-        "Peso Argentino (ARS)": {"dados": dados.get("ARSBRL")},
-        "Bitcoin (BTC)": {"dados": dados.get("BTCBRL")},
-    }
+    # Converte o JSON em {moeda: {"taxa": ..., "var": ...}}, ignorando itens incompletos
+    cotacoes = {}
+    for moeda in MOEDAS:
+        item = dados.get(f"{moeda}BRL")
+        try:
+            cotacoes[moeda] = {"taxa": float(item["bid"]), "var": float(item["pctChange"])}
+        except (KeyError, TypeError, ValueError):
+            continue
 
-    cols = st.columns(len(moedas_info))
-    for i, (nome, info) in enumerate(moedas_info.items()):
-        item = info["dados"]
-        if item:
-            val_atual = float(item["bid"])
-            variacao = float(item["pctChange"])
-            cols[i].metric(
-                label=item["name"].split("/")[0],
-                value=f"R$ {val_atual:.2f}" if val_atual > 1 else f"R$ {val_atual:.4f}",
-                delta=f"{variacao:+.2f}%"
-            )
+    if not cotacoes:
+        st.error("As cotações vieram em um formato inesperado. Tente novamente mais tarde.")
+        return
+
+    cols = st.columns(len(cotacoes))
+    for col, (moeda, c) in zip(cols, cotacoes.items()):
+        col.metric(MOEDAS[moeda], fmt_brl(c["taxa"]), f"{c['var']:+.2f}%".replace(".", ","))
+
+    atualizado = next((dados[k].get("create_date") for k in dados if dados[k].get("create_date")), None)
+    if atualizado:
+        st.caption(f"Última atualização da fonte: {atualizado} · valores de compra (bid) · cache de até 5 min")
 
     st.divider()
+    st.write("### Calculadora de conversão")
+    c1, c2, c3 = st.columns(3)
+    valor = c1.number_input("Valor", min_value=0.0, value=100.0, step=10.0)
+    moeda = c2.selectbox("Moeda", list(cotacoes), format_func=lambda m: f"{MOEDAS[m]} ({m})")
+    sentido = c3.radio("Sentido", ["Moeda → Real", "Real → Moeda"], horizontal=True)
 
-    st.write("### Calculadora de Conversão")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        valor_inserido = st.number_input("Valor a converter", min_value=0.0, value=100.0, step=10.0)
-        
-    with col2:
-        opcao_destino = st.selectbox(
-            "Converter de / para:",
-            [
-                "Dólar (USD) ➡️ Real (BRL)",
-                "Real (BRL) ➡️ Dólar (USD)",
-                "Euro (EUR) ➡️ Real (BRL)",
-                "Real (BRL) ➡️ Euro (EUR)",
-            ]
-        )
-
-    if dados.get("USDBRL") and dados.get("EURBRL"):
-        dolar_val = float(dados["USDBRL"]["bid"])
-        euro_val = float(dados["EURBRL"]["bid"])
-        
-        if "Dólar (USD) ➡️ Real (BRL)" in opcao_destino:
-            resultado = valor_inserido * dolar_val
-            st.success(f"US$ {valor_inserido:,.2f} equivalem a **R$ {resultado:,.2f}**")
-        elif "Real (BRL) ➡️ Dólar (USD)" in opcao_destino:
-            resultado = valor_inserido / dolar_val
-            st.success(f"R$ {valor_inserido:,.2f} equivalem a **US$ {resultado:,.2f}**")
-        elif "Euro (EUR) ➡️ Real (BRL)" in opcao_destino:
-            resultado = valor_inserido * euro_val
-            st.success(f"€ {valor_inserido:,.2f} equivalem a **R$ {resultado:,.2f}**")
-        elif "Real (BRL) ➡️ Euro (EUR)" in opcao_destino:
-            resultado = valor_inserido / euro_val
-            st.success(f"R$ {valor_inserido:,.2f} equivalem a **€ {resultado:,.2f}**")
+    taxa = cotacoes[moeda]["taxa"]
+    casas = 8 if moeda == "BTC" else 2
+    if sentido == "Moeda → Real":
+        st.success(f"{fmt_num(valor)} {moeda} equivalem a **{fmt_brl(valor * taxa)}**")
+    else:
+        st.success(f"{fmt_brl(valor)} equivalem a **{fmt_num(valor / taxa, casas)} {moeda}**")
 
 
 # ---------- Página Principal ----------
