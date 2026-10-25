@@ -269,7 +269,8 @@ def consultar_cep(cep):
 def obter_cotacoes():
     try:
         url = "https://economia.awesomeapi.com.br/json/last/USD-BRL,EUR-BRL,GBP-BRL,ARS-BRL,BTC-BRL"
-        resp = requests.get(url, timeout=8)
+        headers = {"User-Agent": USER_AGENT}
+        resp = requests.get(url, headers=headers, timeout=8)
         resp.raise_for_status()
         return resp.json()
     except (requests.exceptions.RequestException, ValueError):
