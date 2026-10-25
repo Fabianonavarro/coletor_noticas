@@ -15,7 +15,6 @@ st.set_page_config(page_title="Central de Informações", page_icon="🧭", layo
 
 GNEWS_URL = "https://gnews.io/api/v4"
 VIACEP_URL = "https://viacep.com.br/ws/{}/json/"
-AWESOME_URL = "https://economia.awesomeapi.com.br/json/last"
 USER_AGENT = "Mozilla/5.0 (compatible; CentralInformacoes/1.0)"
 
 IDIOMAS = {"Português": "pt", "English": "en"}
@@ -31,12 +30,6 @@ CATEGORIAS = {
     "Esportes": "sports", "Ciência": "science", "Saúde": "health",
 }
 FONTES = {"GNews (API, mundo)": "GNews", "RSS (G1, Folha, Agência Brasil)": "RSS"}
-
-# Moedas do conversor (sempre cotadas contra o real)
-MOEDAS = {
-    "USD": "Dólar americano", "EUR": "Euro", "GBP": "Libra esterlina",
-    "ARS": "Peso argentino", "BTC": "Bitcoin",
-}
 
 # Feeds RSS por categoria: (nome do portal, URL).
 RSS_FEEDS = {
@@ -86,21 +79,15 @@ def carregar_config():
     except Exception:
         api_key = None
 
-    # Opcional: chave gratuita da AwesomeAPI (evita limites e cache nas cotações)
-    try:
-        awesome_key = st.secrets["AWESOMEAPI_KEY"]
-    except Exception:
-        awesome_key = None
-
     try:
         max_results = int(st.secrets.get("MAX_RESULTS", 20))
     except Exception:
         max_results = 20
 
-    return api_key, awesome_key, max_results
+    return api_key, max_results
 
 
-API_KEY, AWESOME_KEY, MAX_RESULTS = carregar_config()
+API_KEY, MAX_RESULTS = carregar_config()
 
 
 # ---------- Utilidades ----------
@@ -124,16 +111,6 @@ def formatar_data(publicado_em):
         return dt.astimezone(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M")
     except (ValueError, AttributeError):
         return publicado_em or "Sem data"
-
-
-def fmt_num(valor, casas=2):
-    """Formata no padrão brasileiro: 1.234,56"""
-    s = f"{valor:,.{casas}f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def fmt_brl(valor):
-    return "R$ " + fmt_num(valor, 2 if valor >= 1 else 4)
 
 
 # ---------- Fonte 1: GNews ----------
@@ -287,37 +264,6 @@ def consultar_cep(cep):
     return None if dados.get("erro") else dados
 
 
-# ---------- Serviço de Cotações ----------
-@st.cache_data(ttl=300, show_spinner="Buscando cotações...")
-def obter_cotacoes():
-    """
-    Busca as cotações na AwesomeAPI. Falhas levantam RuntimeError, que o
-    st.cache_data NÃO guarda (antes, um erro virava None e ficava em cache por 30 min).
-    """
-    pares = ",".join(f"{m}-BRL" for m in MOEDAS)
-    headers = {"User-Agent": USER_AGENT}
-    if AWESOME_KEY:
-        headers["x-api-key"] = AWESOME_KEY
-
-    try:
-        resp = requests.get(f"{AWESOME_URL}/{pares}", headers=headers, timeout=10)
-        resp.raise_for_status()
-        dados = resp.json()
-    except requests.exceptions.HTTPError as e:
-        codigo = e.response.status_code if e.response is not None else "?"
-        dicas = {
-            404: "Alguma moeda da lista não foi encontrada.",
-            429: "Limite de requisições atingido. Cadastre uma chave gratuita (AWESOMEAPI_KEY).",
-        }
-        raise RuntimeError(f"AwesomeAPI retornou erro HTTP {codigo}. {dicas.get(codigo, '')}".strip()) from None
-    except (requests.exceptions.RequestException, ValueError):
-        raise RuntimeError("Não foi possível conectar à AwesomeAPI.") from None
-
-    if not isinstance(dados, dict) or not any(f"{m}BRL" in dados for m in MOEDAS):
-        raise RuntimeError("Resposta inesperada da AwesomeAPI.")
-    return dados
-
-
 # ---------- Exibição ----------
 def mostrar_artigos(artigos, avisos=()):
     for aviso in avisos:
@@ -415,51 +361,6 @@ def aba_cep():
         mostrar_artigos(artigos, avisos)
 
 
-def aba_conversor():
-    st.subheader("💱 Cotações e Conversor de Moedas")
-
-    try:
-        dados = obter_cotacoes()
-    except RuntimeError as e:
-        st.error(f"Não foi possível carregar as cotações. {e}")
-        return
-
-    # Converte o JSON em {moeda: {"taxa": ..., "var": ...}}, ignorando itens incompletos
-    cotacoes = {}
-    for moeda in MOEDAS:
-        item = dados.get(f"{moeda}BRL")
-        try:
-            cotacoes[moeda] = {"taxa": float(item["bid"]), "var": float(item["pctChange"])}
-        except (KeyError, TypeError, ValueError):
-            continue
-
-    if not cotacoes:
-        st.error("As cotações vieram em um formato inesperado. Tente novamente mais tarde.")
-        return
-
-    cols = st.columns(len(cotacoes))
-    for col, (moeda, c) in zip(cols, cotacoes.items()):
-        col.metric(MOEDAS[moeda], fmt_brl(c["taxa"]), f"{c['var']:+.2f}%".replace(".", ","))
-
-    atualizado = next((dados[k].get("create_date") for k in dados if dados[k].get("create_date")), None)
-    if atualizado:
-        st.caption(f"Última atualização da fonte: {atualizado} · valores de compra (bid) · cache de até 5 min")
-
-    st.divider()
-    st.write("### Calculadora de conversão")
-    c1, c2, c3 = st.columns(3)
-    valor = c1.number_input("Valor", min_value=0.0, value=100.0, step=10.0)
-    moeda = c2.selectbox("Moeda", list(cotacoes), format_func=lambda m: f"{MOEDAS[m]} ({m})")
-    sentido = c3.radio("Sentido", ["Moeda → Real", "Real → Moeda"], horizontal=True)
-
-    taxa = cotacoes[moeda]["taxa"]
-    casas = 8 if moeda == "BTC" else 2
-    if sentido == "Moeda → Real":
-        st.success(f"{fmt_num(valor)} {moeda} equivalem a **{fmt_brl(valor * taxa)}**")
-    else:
-        st.success(f"{fmt_brl(valor)} equivalem a **{fmt_num(valor / taxa, casas)} {moeda}**")
-
-
 # ---------- Página Principal ----------
 st.markdown(
     """
@@ -471,7 +372,7 @@ st.markdown(
     </style>
     <div class="hero">
         <h1>🧭 Central de Informações</h1>
-        <p>Notícias (GNews + RSS), Consulta de CEP e Conversor de Moedas em um só lugar.</p>
+        <p>Notícias de duas fontes (GNews + RSS) e consulta de CEP em um só lugar.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -480,14 +381,26 @@ st.markdown(
 if not API_KEY:
     st.warning("Chave da GNews não encontrada nos Secrets: só o RSS vai funcionar na aba de notícias.")
 
-tab_noticias, tab_cep, tab_conversor = st.tabs(["📰 Notícias", "📍 Consulta de CEP", "💱 Conversor de Moedas"])
+tab_noticias, tab_cep = st.tabs(["📰 Notícias", "📍 Consulta de CEP"])
 
 with tab_noticias:
     aba_noticias()
 with tab_cep:
     aba_cep()
-with tab_conversor:
-    aba_conversor()
 
-st.divider()
-st.caption("Desenvolvido por **Fabiano Navarro** · [LinkedIn](https://www.linkedin.com/in/fabiano-de-navarro)")
+st.markdown(
+    """
+    <style>
+        .footer { margin-top: 2rem; padding: 1rem; border-radius: 12px; text-align: center;
+                  background: rgba(128, 128, 128, 0.15); font-size: 0.9rem; }
+        .footer a { color: #1e6bff; text-decoration: none; font-weight: 600; }
+        .footer a:hover { text-decoration: underline; }
+    </style>
+    <div class="footer">
+        Desenvolvido por <strong>Fabiano Navarro</strong> &nbsp;·&nbsp;
+        <a href="https://www.linkedin.com/in/fabiano-de-navarro" target="_blank">LinkedIn</a> &nbsp;·&nbsp;
+        <a href="https://github.com/Fabianonavarro" target="_blank">GitHub</a>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
